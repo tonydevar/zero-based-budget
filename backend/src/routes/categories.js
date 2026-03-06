@@ -171,6 +171,44 @@ router.post('/categories', (req, res, next) => {
 });
 
 /**
+ * PUT /api/categories/reorder
+ * Batch updates sort_order for multiple categories (for drag-and-drop).
+ * IMPORTANT: This static route must be registered BEFORE PUT /categories/:id
+ * to prevent Express from matching "reorder" as the :id parameter.
+ */
+router.put('/categories/reorder', (req, res, next) => {
+  try {
+    const db = getDb();
+    const { items } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'items array is required' });
+    }
+
+    const updateOrder = db.prepare('UPDATE categories SET sort_order = ? WHERE id = ?');
+    const updateGroup = db.prepare('UPDATE categories SET sort_order = ?, category_group_id = ? WHERE id = ?');
+
+    const doReorder = db.transaction(() => {
+      let updated = 0;
+      for (const item of items) {
+        if (item.category_group_id !== undefined) {
+          updateGroup.run(item.sort_order, item.category_group_id, item.id);
+        } else {
+          updateOrder.run(item.sort_order, item.id);
+        }
+        updated++;
+      }
+      return updated;
+    });
+
+    const updated = doReorder();
+    res.json({ updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * PUT /api/categories/:id
  * Updates category name, sort_order, or is_hidden.
  */
@@ -225,42 +263,6 @@ router.delete('/categories/:id', (req, res, next) => {
 
     db.prepare('DELETE FROM categories WHERE id = ?').run(id);
     res.json({ success: true, id: Number(id) });
-  } catch (err) {
-    next(err);
-  }
-});
-
-/**
- * PUT /api/categories/reorder
- * Batch updates sort_order for multiple categories (for drag-and-drop).
- */
-router.put('/categories/reorder', (req, res, next) => {
-  try {
-    const db = getDb();
-    const { items } = req.body;
-
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'items array is required' });
-    }
-
-    const updateOrder = db.prepare('UPDATE categories SET sort_order = ? WHERE id = ?');
-    const updateGroup = db.prepare('UPDATE categories SET sort_order = ?, category_group_id = ? WHERE id = ?');
-
-    const doReorder = db.transaction(() => {
-      let updated = 0;
-      for (const item of items) {
-        if (item.category_group_id !== undefined) {
-          updateGroup.run(item.sort_order, item.category_group_id, item.id);
-        } else {
-          updateOrder.run(item.sort_order, item.id);
-        }
-        updated++;
-      }
-      return updated;
-    });
-
-    const updated = doReorder();
-    res.json({ updated });
   } catch (err) {
     next(err);
   }
