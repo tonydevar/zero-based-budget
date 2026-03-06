@@ -42,15 +42,24 @@ export const useAccountStore = create((set, get) => ({
   },
 
   fetchTransactions: async (accountId, page = 1) => {
-    set({ loading: true, error: null, selectedAccountId: accountId });
+    set((state) => ({
+      loading: true,
+      error: null,
+      selectedAccountId: accountId,
+      // Reset list when fetching page 1 or switching accounts
+      transactions: page === 1 || state.selectedAccountId !== accountId ? [] : state.transactions,
+    }));
     try {
       const data = await accountsApi.getTransactions(accountId, page);
-      set({
-        transactions: data.transactions,
+      set((state) => ({
+        transactions:
+          page === 1
+            ? data.transactions
+            : [...state.transactions, ...data.transactions],
         transactionsPage: data.page,
         transactionsTotal: data.total,
         loading: false,
-      });
+      }));
     } catch (err) {
       set({ error: err.message, loading: false });
     }
@@ -58,10 +67,9 @@ export const useAccountStore = create((set, get) => ({
 
   createTransaction: async (data) => {
     const result = await accountsApi.createTransaction(data);
-    // Refresh transactions for the current account
     const { selectedAccountId } = get();
     if (selectedAccountId) {
-      await get().fetchTransactions(selectedAccountId);
+      await get().fetchTransactions(selectedAccountId, 1);
     }
     await get().fetchAccounts();
     return result;
@@ -72,15 +80,21 @@ export const useAccountStore = create((set, get) => ({
     set((state) => ({
       transactions: state.transactions.map((t) => (t.id === id ? updated : t)),
     }));
+    // Refresh to get correct running balances
+    const { selectedAccountId } = get();
+    if (selectedAccountId) {
+      await get().fetchTransactions(selectedAccountId, 1);
+    }
     await get().fetchAccounts();
     return updated;
   },
 
   deleteTransaction: async (id) => {
     await accountsApi.deleteTransaction(id);
-    set((state) => ({
-      transactions: state.transactions.filter((t) => t.id !== id),
-    }));
+    const { selectedAccountId } = get();
+    if (selectedAccountId) {
+      await get().fetchTransactions(selectedAccountId, 1);
+    }
     await get().fetchAccounts();
   },
 
@@ -89,6 +103,8 @@ export const useAccountStore = create((set, get) => ({
     set((state) => ({
       transactions: state.transactions.map((t) => (t.id === id ? updated : t)),
     }));
+    // Refresh accounts for updated cleared balance
+    await get().fetchAccounts();
     return updated;
   },
 }));
