@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { budgetApi } from '../api/budget.js';
 import { categoriesApi } from '../api/categories.js';
+import { reportsApi } from '../api/reports.js';
 import { getCurrentMonth } from '../utils/dates.js';
 
 export const useBudgetStore = create((set, get) => ({
@@ -21,11 +22,16 @@ export const useBudgetStore = create((set, get) => ({
     const m = month || get().month;
     set({ loading: true, error: null });
     try {
-      const data = await budgetApi.getBudget(m);
+      // Fetch budget data and AoM trend in parallel
+      const [data, aomData] = await Promise.all([
+        budgetApi.getBudget(m),
+        reportsApi.getAgeOfMoney().catch(() => null),
+      ]);
       set({
         month: m,
         readyToAssign: data.readyToAssign,
         ageOfMoney: data.ageOfMoney,
+        ageTrend: aomData?.trend ?? [],
         groups: data.groups,
         loading: false,
       });
